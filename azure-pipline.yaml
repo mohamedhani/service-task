@@ -1,0 +1,169 @@
+trigger:
+  branches:
+    include:
+    - feature/*
+    - main
+  tags:
+    exclude:
+      - "*"
+pr:
+ branches:
+  include:
+  - feature/*
+
+variables:
+- name: projectName
+  value: test-project
+- group: AzureDevops
+- group: jfrog
+
+pool: ec2-agents
+
+stages:
+- stage: ServiceBuild
+  displayName: Build Service
+  jobs:
+  - job: current_version
+    steps:
+    - script: |
+        VERSION=$(git tag | tail -n 1)
+          if [ -z $VERSION ]
+          then 
+              VERSION=1
+          else 
+              BRANCH_NAME=$(build.SourceBranchName)
+              if [ $BRANCH_NAME != "main" ]
+              then 
+                VERSION=$VERSION-$BRANCH_NAME
+              else 
+                VERSION=$(expr $VERSION + 1)
+              fi 
+          fi 
+          echo "version is $VERSION"
+          echo "##vso[task.setvariable variable=version;isOutput=true;]$VERSION"
+      name: get_version
+      - task: SonarQubePrepare@4
+        inputs:
+          SonarQube: 'http://44.193.2.134:9000/'
+          scannerMode: 'Other'
+
+  - job: BuildMaven
+    workspace: 
+      clean: all
+    displayName: Build Maven
+    container: 
+      image: 'mohamedhani/maven'
+    steps: 
+    - task: Maven@3
+      inputs:
+        goals: 'clean install'
+
+  - job: BuildImage
+    displayName: Build Image
+    dependsOn: 
+    - BuildMaven
+    - current_version
+    variables:
+      version: $[ dependencies.current_version.outputs['get_version.version'] ]
+    steps:
+    # image tag with service version id
+    - task: Docker@2
+      displayName: Build and Push Image
+      inputs:
+        containerRegistry: 'frog_connection'
+        repository: 'services/$(projectName)'
+        command: 'buildAndPush'
+        Dockerfile: '**/Dockerfile'
+        tags: $(version)
+
+# testing stage
+- stage: CodeQuality
+  displayName: SonarQube Code Quality
+  condition:  startsWith(variables['build.sourceBranch'], 'refs/heads/feature/') 
+  jobs:
+  - job: QualityCheck
+    displayName: SonarQube Quality Check
+    workspace: 
+      clean: all
+    container: 
+      image: 'mohamedhani/maven'
+    steps:
+    - task: SonarQubePrepare@4
+      displayName: Prepare SonarQube
+      inputs:
+        SonarQube: 'sonarqube-server'
+        scannerMode: 'Other'
+        extraProperties: |
+          sonar.projectKey=learning_service-test
+    - task: Maven@3
+      displayName:  Run SonarQube Checks
+      inputs:
+        mavenPomFile: 'pom.xml'
+        goals: 'sonar:sonar'
+
+    # run only for pull requests
+    - task: SonarQubePublish@4
+      displayName:  SonarQube Gateway Check
+      condition: eq(variables['Build.Reason	'],'PullRequest')
+      inputs:
+        pollingTimeoutSec: '300'
+    
+- stage: Deployment
+  variables:
+  - name: current_version
+    value: $[ stageDependencies.ServiceBuild.current_version.outputs['get_version.version'] ]
+  jobs:
+  - deployment: DevDeployment
+    environment: "dev"
+    strategy:
+      runOnce:
+        preDeploy:
+          steps:
+          - checkout: none
+          - bash: |
+              
+              git clone https://mohamedHANI1449:$(azure_personal_key)@dev.azure.com/mohamedHANI1449/learning/_git/draft-pack
+              mv ./draft-pack/draft-pack $(projectName)
+              yq eval -i '.image.name = "$(jfrog_server)/services/$(projectName):$(current_version)"' ./$(projectName)/values.yaml
+              yq eval -i '.replicaCount = 1'  ./$(projectName)/values.yaml
+              yq eval -i '.name = "$(projectName)-service"' ./$(projectName)/Chart.yaml
+              yq eval -i '.version = "1.0.$(current_version)"' ./$(projectName)/Chart.yaml
+              
+            displayName: Prepare Helm Chart
+          # package helm chart
+          - task: HelmDeploy@0
+            displayName: Package Chart
+            inputs:
+              command: 'package'
+              chartPath: '$(projectName)'
+              chartVersion: '1.0.$(current_version)'
+  #          condition: eq(variables['build.sourceBranch'], 'refs/heads/main')
+          - bash: |
+             curl -u$(jfrog_username):$(jfrog_password) -T $(Build.ArtifactStagingDirectory)/$(projectName)-service-1.0.$(current_version).tgz "https://$(jfrog_server)/artifactory/task-helm-local/$(projectName)-service-$(current_version).tgz"
+  #          condition: eq(variables['build.sourceBranch'], 'refs/heads/main')
+        deploy:
+          steps:
+          - task: HelmDeploy@0
+            displayName: Deploy Chart on Test Environment
+            condition: startsWith(variables['build.sourceBranch'], 'refs/heads/feature/')
+            inputs:
+              connectionType: 'Kubernetes Service Connection'
+              kubernetesServiceConnection: 'dev-dev-1629646030465'
+              namespace: 'dev'
+              command: 'upgrade'
+              chartType: 'FilePath'
+              chartPath: './$(projectName)'
+              releaseName: '$(projectName)-$(Build.SourceBranchName)'
+              waitForExecution: false
+          - task: HelmDeploy@0
+            condition: eq(variables['build.sourceBranch'], 'refs/heads/main')
+            displayName: Deploy Chart on Test Environment
+            inputs:
+              connectionType: 'Kubernetes Service Connection'
+              kubernetesServiceConnection: 'dev-dev-1629646030465'
+              namespace: 'dev'
+              command: 'upgrade'
+              chartType: 'FilePath'
+              chartPath: './$(projectName)'
+              releaseName: '$(projectName)-$(Build.SourceBranchName)'
+              waitForExecution: false
