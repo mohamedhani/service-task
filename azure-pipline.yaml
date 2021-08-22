@@ -42,11 +42,8 @@ stages:
           echo "version is $VERSION"
           echo "##vso[task.setvariable variable=version;isOutput=true;]$VERSION"
       name: get_version
-      - task: SonarQubePrepare@4
-        inputs:
-          SonarQube: 'http://44.193.2.134:9000/'
-          scannerMode: 'Other'
 
+      condition: eq(variables['build.sourceBranch'], 'refs/heads/main')
   - job: BuildMaven
     workspace: 
       clean: all
@@ -79,7 +76,6 @@ stages:
 # testing stage
 - stage: CodeQuality
   displayName: SonarQube Code Quality
-  condition:  startsWith(variables['build.sourceBranch'], 'refs/heads/feature/') 
   jobs:
   - job: QualityCheck
     displayName: SonarQube Quality Check
@@ -95,20 +91,23 @@ stages:
         scannerMode: 'Other'
         extraProperties: |
           sonar.projectKey=learning_service-test
+      condition:  startsWith(variables['build.sourceBranch'], 'refs/heads/feature/') 
     - task: Maven@3
       displayName:  Run SonarQube Checks
       inputs:
         mavenPomFile: 'pom.xml'
         goals: 'sonar:sonar'
+      condition:  startsWith(variables['build.sourceBranch'], 'refs/heads/feature/') 
 
     # run only for pull requests
     - task: SonarQubePublish@4
       displayName:  SonarQube Gateway Check
-      condition: eq(variables['Build.Reason	'],'PullRequest')
+      condition: eq(variables['Build.Reason'],'PullRequest')
       inputs:
         pollingTimeoutSec: '300'
     
-- stage: Deployment
+    
+- stage: Deployment 
   variables:
   - name: current_version
     value: $[ stageDependencies.ServiceBuild.current_version.outputs['get_version.version'] ]
@@ -121,15 +120,14 @@ stages:
           steps:
           - checkout: none
           - bash: |
-              
               git clone https://mohamedHANI1449:$(azure_personal_key)@dev.azure.com/mohamedHANI1449/learning/_git/draft-pack
               mv ./draft-pack/draft-pack $(projectName)
               yq eval -i '.image.name = "$(jfrog_server)/services/$(projectName):$(current_version)"' ./$(projectName)/values.yaml
               yq eval -i '.replicaCount = 1'  ./$(projectName)/values.yaml
               yq eval -i '.name = "$(projectName)-service"' ./$(projectName)/Chart.yaml
-              yq eval -i '.version = "1.0.$(current_version)"' ./$(projectName)/Chart.yaml
-              
+              yq eval -i '.version = "1.0.$(current_version)"' ./$(projectName)/Chart.yaml 
             displayName: Prepare Helm Chart
+
           # package helm chart
           - task: HelmDeploy@0
             displayName: Package Chart
@@ -137,10 +135,15 @@ stages:
               command: 'package'
               chartPath: '$(projectName)'
               chartVersion: '1.0.$(current_version)'
-  #          condition: eq(variables['build.sourceBranch'], 'refs/heads/main')
+            condition: eq(variables['build.sourceBranch'], 'refs/heads/main')
           - bash: |
              curl -u$(jfrog_username):$(jfrog_password) -T $(Build.ArtifactStagingDirectory)/$(projectName)-service-1.0.$(current_version).tgz "https://$(jfrog_server)/artifactory/task-helm-local/$(projectName)-service-$(current_version).tgz"
-  #          condition: eq(variables['build.sourceBranch'], 'refs/heads/main')
+            condition: eq(variables['build.sourceBranch'], 'refs/heads/main')
+          - script: |
+              git config credential.helper store
+              echo "https://$(organization):$(azure_personal_key)@dev.azure.com/" > ~/.git-credentials 
+              git tag -a $(current_version) -m "release $(current_version)"
+              git push --tags
         deploy:
           steps:
           - task: HelmDeploy@0
@@ -167,3 +170,4 @@ stages:
               chartPath: './$(projectName)'
               releaseName: '$(projectName)-$(Build.SourceBranchName)'
               waitForExecution: false
+
