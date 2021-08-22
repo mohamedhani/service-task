@@ -24,8 +24,7 @@
 
 ## How Pipeline Work
 **There are two Flow based on Below Digram**
-
-![alt text](https://github.com/[username]/[reponame]/blob/[branch]/flowchart.png?raw=true)
+![Screenshot](flowchart.png)
 
 **Notes:**
   * You can't merge feature branch to main branch if the pipeline is not green
