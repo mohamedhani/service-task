@@ -32,4 +32,4 @@
   * You shouldn't push any commit on main branch directly 
   * Each release with have same tag on main branch, docker image on jfrog, and helm chart on jfrog 
   * once testing team test the service and the service is working fine. operation team can  deploy the chart with the release name on production environment with separate pipline
-
+  * you can find draft-pack repo here https://github.com/mohamedhani/draft-pack 
