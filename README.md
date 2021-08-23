@@ -1,9 +1,9 @@
 # How Pipeline Work
 **Prerequists**
-1) Add AzureDevops credentials to AzureDevops Library with this name "AzureDevops"
+1) Add github credentials to AzureDevops Library with this name "github"
   variables are: 
-   *  azure_personal_key 
-   * organization
+   *  github_clint_id
+   * github_clint_secret
 2) Add Jrog credentials to AzureDevops Library with this name "jfrog"
    variables are:
    * jfrog_password
@@ -21,6 +21,7 @@
     * kubectl
     * yq
     * mvn
+    that agent could be a docker container or vm.
 
 ## How Pipeline Work
 **There are two Flow based on Below Digram**

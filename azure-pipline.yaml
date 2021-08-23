@@ -14,8 +14,8 @@ pr:
 variables:
 - name: projectName
   value: test-project
-- group: AzureDevops
 - group: jfrog
+- group: github
 
 pool: ec2-agents
 
@@ -120,7 +120,7 @@ stages:
           steps:
           - checkout: none
           - bash: |
-              git clone https://mohamedHANI1449:$(azure_personal_key)@dev.azure.com/mohamedHANI1449/learning/_git/draft-pack
+              git clone https://$(github_clint_id):$(github_clint_secret)@github.com/mohamedhani/draft-pack.git
               mv ./draft-pack/draft-pack $(projectName)
               yq eval -i '.image.name = "$(jfrog_server)/services/$(projectName):$(current_version)"' ./$(projectName)/values.yaml
               yq eval -i '.replicaCount = 1'  ./$(projectName)/values.yaml
@@ -141,7 +141,7 @@ stages:
             condition: eq(variables['build.sourceBranch'], 'refs/heads/main')
           - script: |
               git config credential.helper store
-              echo "https://$(organization):$(azure_personal_key)@dev.azure.com/" > ~/.git-credentials 
+              echo "https://$(github_clint_id):$(github_clint_secret)@github.com/" > ~/.git-credentials 
               git tag -a $(current_version) -m "release $(current_version)"
               git push --tags
         deploy:
