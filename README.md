@@ -1,4 +1,6 @@
-# How Pipeline Work
+# Demo Service Pipeline
+This project is created by this service intial pipeline that will create the intial version of the service with name and draft-pack-version
+https://github.com/mohamedhani/init-service
 **Prerequists**
 1) Add github credentials to AzureDevops Library with this name "github"
   variables are: 
@@ -16,6 +18,7 @@
     * Dev Environment  (Dev Namespace)
     * Test Environment (Test Namespace)
     * Prod Environment (Prod Namespace)
+    * GitHub
 5) setup agent that have all of these tools:
     * helm
     * kubectl
